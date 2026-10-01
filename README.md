@@ -59,24 +59,24 @@
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Searches the listings file for items matching a description, size, and price ceiling.
+- **Inputs:** `description` (str), `size` (str), `max_price` (float)
+- **Returns:** A list of listing dicts, each with id, title, description, category, style_tags, size, condition, price, colors, brand, platform.
+- **When it has nothing:** Returns an empty list `[]`, never `None`.
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Takes a thrifted item and the user's wardrobe and suggests outfits pairing them.
+- **Inputs:** `new_item` (dict, one listing), `wardrobe` (list of wardrobe item dicts)
+- **Returns:** A string of 2-3 outfit ideas.
+- **When it has nothing:** If `wardrobe` is `[]`, returns a string of general styling advice for the item instead of failing.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Writes a short caption someone would post about the outfit.
+- **Inputs:** `outfit` (str), `new_item` (dict)
+- **Returns:** A string caption, 1-3 sentences.
+- **When it has nothing:** If `outfit` is empty, returns an empty string `""`.
 
 ---
 
@@ -93,13 +93,13 @@
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If search_listings returns an empty list, set session["message"] to a message naming what to change (size, price, or keywords) and stop, leaving session["fit_card"] as None. Otherwise set session["selected_item"] to the first result and go to suggest_outfit, then create_fit_card.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** (fill in after you build it: regex, string splitting, or asking the model)
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** search results -> selected_item -> outfit -> fit_card
 
 ---
 
