@@ -39,9 +39,7 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
-
+A user types a plain-language query like "vintage graphic tee under $30, size M" and FitFindr searches 40 thrift listings for matches. If it finds any, it picks the best match and asks the model to suggest 2-3 outfits that pair the item with the user's saved wardrobe — or general styling advice if the wardrobe is empty. It then generates a short social-media caption (the fit card) for the outfit. If the search comes back empty, the agent stops early and tells the user specifically which filter to loosen (keywords, size, or price).
 
 ---
 
@@ -97,7 +95,7 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** (fill in after you build it: regex, string splitting, or asking the model)
+**How the query is parsed:** Regex in `agent.py::_parse_query`. Price is extracted by matching patterns like "under $30" or "max $30". Size is extracted by matching "size XL" or bare tokens like S, M, L, XL. The remaining text becomes the description passed to `search_listings`.
 
 **What moves through the session:** search results -> selected_item -> outfit -> fit_card
 
@@ -113,25 +111,63 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Here are 3 outfit suggestions that pair the Y2K Butterfly Baby Tee with
+            pieces from your current wardrobe:
+
+            Outfit 1: Off-Duty Y2K Contrast — baby tee + dark wash baggy jeans +
+            chunky white sneakers + black crossbody bag
+
+            Outfit 2: Elevated Retro-Casual — baby tee + wide-leg khaki trousers +
+            vintage black denim jacket + brown leather belt + combat boots
+
+            Outfit 3: Layered Transitional Streetwear — baby tee + black cropped zip
+            hoodie (open) + dark wash baggy jeans + chunky sneakers
+
+  Fit card: Scored this Y2K butterfly baby tee on Depop for just $18 and I'm
+            officially in my early 2000s street-style era. 🦋 Can't wait to style
+            this with baggy denim and chunky sneaks, or layer it under a zip-up
+            hoodie. Tell me which outfit combo is your favorite!
 ```
 
 **The three tools, tested one at a time**
 
 ```
 $ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+[{'id': 'lst_002', 'title': 'Y2K Baby Tee — Butterfly Print', 'description': 'Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.', 'category': 'tops', 'style_tags': ['y2k', 'vintage', 'graphic tee', 'cottagecore'], 'size': 'S/M', 'condition': 'excellent', 'price': 18.0, 'colors': ['white', 'pink', 'purple'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', ...}, ...]
 
+$ python -c "from tools import search_listings; print(search_listings('neon green snowsuit', max_price=5))"
+[]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import search_listings, suggest_outfit; item = search_listings('graphic tee', max_price=30)[0]; print(suggest_outfit(item, []))"
+That Y2K butterfly baby tee is a super versatile find! Because it sits right at the intersection of Y2K nostalgia and soft cottagecore, you can take it in a few different directions depending on your vibe.
 
+Since you don't have a saved wardrobe yet, here are 3 easy, staple-based outfit formulas you can build using basic pieces you can easily find thrifted or retail:
+
+### 1. The Ultimate Y2K Mall-Rat Look
+* Bottoms: Low-rise or mid-rise baggy cargo pants in a neutral (olive green, beige, or grey)
+* Footwear: Chunky platform sneakers
+* Accessories: Small nylon shoulder bag, rimless tinted sunglasses, butterfly claw clips
+
+### 2. The Soft Cottagecore Picnic Vibe
+* Bottoms: A white or cream tiered midi skirt or a denim button-front mini skirt
+* Footwear: Strappy brown leather sandals or canvas slip-ons
+* Accessories: Woven straw tote bag, dainty silver pendant necklace
+
+### 3. The Off-Duty Model / Casual Streetwear
+* Bottoms: Vintage-wash straight-leg or mom jeans
+* Outerwear (optional): Oversized faux-leather racer jacket or flannel tied at the waist
+* Footwear: Retro low-profile sneakers (Adidas Sambas, Gazelles, Nike Cortez)
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
-
+$ python -c "from tools import search_listings, create_fit_card; item = search_listings('graphic tee', max_price=30)[0]; print(create_fit_card('Pair with dark jeans and boots', item))"
+Still kicking myself for scoring this butterfly baby tee for just $18 on Depop. Honestly obsessed — just need to pair it with some dark wash jeans and chunky boots for the ultimate off-duty model look.
 ```
 
 ---
@@ -147,15 +183,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to implement `suggest_outfit` to take `new_item` and `wardrobe` as arguments, handling an empty wardrobe by returning general advice.
+- *What came back:* The implementation called `wardrobe.get("items", [])`, which assumed wardrobe was always a dict. When tested with `suggest_outfit(item, [])` — a bare list — it crashed with `AttributeError: 'list' object has no attribute 'get'`.
+- *What I changed:* Added a type check: `wardrobe.get("items", []) if isinstance(wardrobe, dict) else wardrobe`, so both a bare list and a `{"items": [...]}` dict are accepted.
 
 **Moment 2**
 
 - *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What came back:* The initial `search_listings` used a plain `"s" in listing_size.lower()` substring check. Tested with size "S", it also matched listings with size "US 7" and "XL (oversized)" because "s" is a substring of both.
+- *What I changed:* Replaced the substring check with a token-based approach: split both the query size and listing size on spaces, slashes, and parentheses, then check for any shared token. "S" now only matches listings whose size tokenizes to include "S" exactly.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
