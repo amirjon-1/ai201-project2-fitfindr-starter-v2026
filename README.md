@@ -332,3 +332,8 @@ full. -->
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+## Data Notes
+- Listing fields: id, title, description, category, style_tags (list), size (str), condition, price (float), colors (list), brand (can be null), platform
+- Sizes are messy strings ("W30 L30", "S/M", "XL (oversized)", "M"), so size matching can't be a plain equality check
+- Wardrobe item fields: id, name, category, colors, style_tags, notes
