@@ -13,6 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
@@ -45,6 +47,40 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "fit_card": None,            # what create_fit_card returned
         "error": None,               # set when the run ended early
     }
+
+
+# ── query parser ──────────────────────────────────────────────────────────────
+
+def _parse_query(query: str) -> dict:
+    """
+    Extract description, size, and max_price from a plain-language query.
+    Uses regex — no model call needed.
+    """
+    text = query
+
+    # Price: "under $30", "max $30", "less than $30", or bare "$30"
+    price_match = re.search(
+        r'(?:under|max|less\s+than|for)\s*\$?\s*(\d+(?:\.\d+)?)', text, re.I
+    )
+    if not price_match:
+        price_match = re.search(r'\$\s*(\d+(?:\.\d+)?)', text)
+    max_price = float(price_match.group(1)) if price_match else None
+
+    # Size: "size M", "size XL", or a bare common size token
+    size_match = re.search(r'\b(?:size|in)\s+([A-Z0-9/]+)', text, re.I)
+    if not size_match:
+        size_match = re.search(r'\b(XS|S/M|XXL|XL|S|M|L)\b', text, re.I)
+    size = size_match.group(1).upper() if size_match else None
+
+    # Description: everything left after stripping price and size spans
+    desc = text
+    for match in filter(None, [price_match, size_match]):
+        desc = desc[:match.start()] + ' ' + desc[match.end():]
+    desc = re.sub(r'\s+', ' ', desc).strip(' ,')
+    if not desc:
+        desc = query
+
+    return {"description": desc, "size": size, "max_price": max_price}
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
@@ -106,9 +142,56 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         than a stack trace. The import is already at the top of this file.
     """
     session = new_session(query, wardrobe)
+    iteration = 0
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    # 1. Parse the query into description, size, max_price using regex.
+    parsed = _parse_query(query)
+    session["parsed"] = parsed
+
+    iteration += 1
+    trace.check_iterations(iteration)
+
+    # 2. Search.
+    results = search_listings(
+        parsed["description"],
+        size=parsed.get("size"),
+        max_price=parsed.get("max_price"),
+    )
+    session["search_results"] = results
+
+    # 3. Branch: empty results → tell user what to change and stop.
+    if not results:
+        size_hint = f"size ({parsed['size']})" if parsed.get("size") else "size"
+        price_hint = f"price ceiling (${parsed['max_price']:.0f})" if parsed.get("max_price") else "price ceiling"
+        session["error"] = (
+            f"No listings matched your search for '{parsed['description']}'. "
+            f"Try broadening your keywords, or adjusting your {size_hint} or {price_hint}."
+        )
+        return session
+
+    # 4. Pick first result.
+    session["selected_item"] = results[0]
+
+    iteration += 1
+    trace.check_iterations(iteration)
+
+    # 5. Suggest outfit.
+    try:
+        session["outfit_suggestion"] = suggest_outfit(session["selected_item"], wardrobe)
+    except ModelUnavailable as exc:
+        session["error"] = str(exc)
+        return session
+
+    iteration += 1
+    trace.check_iterations(iteration)
+
+    # 6. Create fit card.
+    try:
+        session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+    except ModelUnavailable as exc:
+        session["error"] = str(exc)
+        return session
+
     return session
 
 
