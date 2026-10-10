@@ -265,11 +265,23 @@ The agent ran to completion with general styling advice instead of wardrobe-spec
 $ python app.py ask 'corduroy pants under $40'
 # (run with one character of GEMINI_API_KEY changed)
 
-  The model couldn't be reached. Check that your GEMINI_API_KEY in .env is
-  correct and that you have network access, then try again.
+[1] parse_query
+      in:  dict with keys: query
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 2 items: Corduroy Wide-Leg Pants — Rust, Low-Rise Cargo Pants — Khaki
+[3] select_item
+      out: Corduroy Wide-Leg Pants — Rust ($32.0, depop)
+[4] suggest_outfit
+      →    ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+  The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+1 model calls this session
 ```
 
-Handled by the `ModelUnavailable` catch in `agent.py::run_agent`. No stack trace shown to the user.
+The agent ran parse_query, search_listings, and select_item successfully before hitting the model call in suggest_outfit. `ModelUnavailable` was caught in `agent.py::run_agent` and surfaced as a plain error message. No stack trace shown to the user.
 
 ---
 
