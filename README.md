@@ -193,6 +193,12 @@ Still kicking myself for scoring this butterfly baby tee for just $18 on Depop. 
 - *What came back:* The initial `search_listings` used a plain `"s" in listing_size.lower()` substring check. Tested with size "S", it also matched listings with size "US 7" and "XL (oversized)" because "s" is a substring of both.
 - *What I changed:* Replaced the substring check with a token-based approach: split both the query size and listing size on spaces, slashes, and parentheses, then check for any shared token. "S" now only matches listings whose size tokenizes to include "S" exactly.
 
+**Unit 4 Moment**
+
+- *What I asked for:* After seeing criterion 4 MISSED (only 1 of 5 fit cards had a distinct opening), I asked Claude to diagnose why the model kept producing "Scored this..." as the opener on every run.
+- *What came back:* Claude identified two converging factors: (1) the same item was returned deterministically every run because the size M filter eliminated most jackets, leaving the bucket hat as the consistent top result; (2) the `create_fit_card` prompt had no instruction about structure, so the model defaulted to its best guess at a canonical thrift caption opener. The diagnosis pointed at the prompt, not the tool or loop.
+- *What I changed:* Added an explicit negative constraint ("Do NOT open with 'Scored this' or any variant of it") and a positive direction (start from the vibe, a styling moment, what makes the piece interesting, or the deal) to the prompt in `tools.py::create_fit_card`. After the change, all 5 fit cards in the after run had distinct openings and none started with "Scored this".
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -211,19 +217,49 @@ Still kicking myself for scoring this butterfly baby tee for just $18 on Depop. 
      `python run_eval.py --label before` runs everything and writes the table
      into results/. Paste it here and fill in the verdicts. -->
 
+Source: `results/run_2026-10-09_2338_before.md`, loop: `agent.py::run_agent`
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. matching query completes all 3 tools | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. impossible query stops before suggest_outfit | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. selected_item id matches suggest_outfit input | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. fit card: title mention + under 100 words + distinct opening | 5/5 | PASS | FAIL | FAIL | FAIL | FAIL | MISSED (1/5 distinct openings) |
+| 5. every search result respects price ceiling | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+Criterion 4 note: title mention and word count passed all 5 tries. The failure was on distinct openings -- tries 2-5 all opened with "Scored this reversible brown plaid bucket hat on thredUp for just $14". Only try 1 had a distinct opener. 1/5 distinct, need 4/5.
 
 **Real output from one try**, pasted as text, naming the file and function
 that produced it:
 
-```
+File: `results/run_2026-10-09_2338_before.md` | Loop: `agent.py::run_agent`
+Scenario: matching query completes | Query: `vintage graphic tee under $30` | Try 1
 
+```
+- stopped early: no
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+- search_results: 10
+
+Fit card:
+Scored this butterfly baby tee on Depop for $18 and I'm obsessed 🦋 Already styling it three
+ways—from baggy denim to combat boots—because we are fully leaning into the 2000s aesthetic
+this week. Which look is your favorite?
+
+Trace:
+[1] parse_query
+      in:  dict with keys: query
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+[3] select_item
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+[4] suggest_outfit
+      in:  dict with keys: item, wardrobe_items
+      out: Here are 3 specific outfit ideas that pair the new Y2K butterfly baby tee with pieces from your current wardro…
+[5] create_fit_card
+      in:  dict with keys: item
+      out: Scored this butterfly baby tee on Depop for $18 and I'm obsessed 🦋 Already styling it three ways—from baggy de…
 ```
 
 ---
@@ -248,15 +284,15 @@ that produced it:
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | matching query completes all 3 tools | 4/5 | MET | 5 of 5 runs completed all 5 trace steps (parse_query -> search_listings -> select_item -> suggest_outfit -> create_fit_card) with no early stop. |
+| 2 | impossible query stops before suggest_outfit | 5/5 | MET | All 5 runs hit the empty-results branch and stopped at trace step [3]. No suggest_outfit or create_fit_card call appeared in any trace. |
+| 3 | selected_item id matches suggest_outfit input | 5/5 | MET | The assert in run_agent passed on every run; no AssertionError appeared in any trace output. |
+| 4 | fit card: title mention + under 100 words + distinct opening | 5/5 | MISSED | Title mention and word count passed all 5 tries. But 4 of 5 fit cards opened with the same sentence: "Scored this reversible brown plaid bucket hat on thredUp for just $14". Only try 1 was distinct. 1/5 distinct; target is 4/5. |
+| 5 | every search result respects price ceiling | 5/5 | MET | Every item price in each run was at or below the query's max_price. The price filter runs before the keyword scorer, so no over-budget item can slip through. |
 
 **Diagnoses**
 
-
+Criterion 4 miss: the failure was in the model's output layer, not in the tool or loop branch. The search tool returned the same item deterministically on all 5 runs: Bucket Hat -- Reversible, Brown Plaid at $14 on thredUp. That happened because the "90s track jacket, size M" query's size M filter eliminated most actual jackets, leaving only accessories; the keyword scorer then surfaced the bucket hat (which carries "90s" in its style tags) as the top result. With the same item in every create_fit_card call, and no prompt constraint on structure, the model converged to its canonical thrift caption opener: "Scored this [item] on [platform] for just $[price]". The tool, loop branch, and session state all worked correctly. The prompt was missing a constraint.
 
 ---
 
@@ -272,24 +308,43 @@ that produced it:
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
-**Happy path**
+Source: `results/run_2026-10-09_2338_before.md` | Loop: `agent.py::run_agent`
+
+**Happy path** (query: `vintage graphic tee under $30, size M`)
 
 ```
-
+[1] parse_query
+      in:  dict with keys: query
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+[3] select_item
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+[4] suggest_outfit
+      in:  dict with keys: item, wardrobe_items
+      out: Here are 3 specific outfit ideas that pair the new Y2K butterfly baby tee with pieces from your current wardro…
+[5] create_fit_card
+      in:  dict with keys: item
+      out: Scored this butterfly baby tee on Depop for $18 and I'm obsessed 🦋 Already styling it three ways—from baggy de…
 ```
 
-**Empty search**
+**Empty search** (query: `neon green snowsuit under $5, size XL`)
 
 ```
-
+[1] parse_query
+      in:  dict with keys: query
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+[3] branch: empty results
+      ->   stopping — no listings matched
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+Step [2] in both traces shows `(via MCP)` because `search_listings` now runs inside `mcp_server.py` and the agent calls it through `mcp_client.call_tool`. The 5-step trace (happy path) is visibly longer than the 3-step trace (empty search), confirming the branch fires and stops early.
 
-
+**On the MCP move:** In `agent.py`, the direct `from tools import search_listings` import was removed. The call was replaced with `mcp_client.call_tool("search_listings", {"description": ..., "size": ..., "max_price": ...})`. Inside `mcp_client.py`, `call_tool` starts `mcp_server.py` as a subprocess over stdio, sends a JSON-RPC request, and returns the result. The tool logic in `tools.py` did not change at all -- only the transport layer changed. Behavior was identical before and after the move: same results, same trace output.
 
 ---
 
@@ -300,34 +355,29 @@ full. -->
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** Added two instructions to the `create_fit_card` prompt in `tools.py`: (1) a negative constraint -- "Do NOT open with 'Scored this' or any variant of it", and (2) a positive direction -- start from the vibe it unlocks, a specific styling moment, what makes the piece interesting, or the deal itself. No other code changed.
 
-**Which failure it was meant to fix:**
+**Which failure it was meant to fix:** Criterion 4, distinct openings. The diagnosis pointed at the model's output layer: the prompt had no constraint on how a caption should open, so the model defaulted to the same opener every run. Adding a negative constraint directly targets that failure mechanism.
 
 ### Run Log — After
 
+Source: `results/run_2026-10-09_2353_after.md`, loop: `agent.py::run_agent`
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. matching query completes all 3 tools | 4/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. impossible query stops before suggest_outfit | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. selected_item id matches suggest_outfit input | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. fit card: title mention + under 100 words + distinct opening | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. every search result respects price ceiling | 5/5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Did it help, and how do I know:**
-
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
-
-
+**Did it help, and how do I know:** Yes. Criterion 4 moved from MISSED (1/5 distinct) to MET (5/5 distinct). The 5 after-run fit cards opened with: (1) "The 90s streetwear energy this brown plaid bucket hat brings is unmatched..." (2) "That 90s streetwear energy just unlocked a whole new level of cozy layering..." (3) "Found this reversible brown plaid bucket hat on thredUp for just $14..." (4) "14 bucks on thredUp for a reversible brown plaid bucket hat..." (5) "The ultimate 90s streetwear cheat code is officially this reversible brown plaid bucket hat..." None started with "Scored this". All 5 are distinct. All other criteria stayed MET.
 
 ---
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
+The "90s track jacket, size M" query used in criterion 4 still returns a bucket hat as the top result. The size M filter removes most actual jackets from the pool, and the keyword scorer matches "90s" in the bucket hat's style tags. This is a search relevance issue: the tool returns valid items (they exist, their price is fine, size matches), but the category is wrong. Fixing it would require a category filter in the query parser, a category-weighted scorer, or a semantic re-ranking step. No current criterion fails because of this -- criterion 4 tests fit card quality, not result relevance -- so it was left unfixed.
 
 
 
