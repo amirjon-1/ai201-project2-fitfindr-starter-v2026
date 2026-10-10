@@ -189,7 +189,7 @@ Still kicking myself for scoring this butterfly baby tee for just $18 on Depop. 
 
 **Moment 2**
 
-- *What I asked for:*
+- *What I asked for:* I asked Claude to implement `search_listings` per my spec, with the size filter handling messy sizes like "W30 L30", "S/M", and "XL (oversized)".
 - *What came back:* The initial `search_listings` used a plain `"s" in listing_size.lower()` substring check. Tested with size "S", it also matched listings with size "US 7" and "XL (oversized)" because "s" is a substring of both.
 - *What I changed:* Replaced the substring check with a token-based approach: split both the query size and listing size on spaces, slashes, and parentheses, then check for any shared token. "S" now only matches listings whose size tokenizes to include "S" exactly.
 
@@ -203,6 +203,73 @@ Still kicking myself for scoring this butterfly baby tee for just $18 on Depop. 
 
      Don't fill these in during unit 3.
      ═══════════════════════════════════════════════════════════════════ -->
+
+---
+
+## Failure Modes
+
+All three failure modes triggered manually. Commands and real output below.
+
+**1. Empty search** -- query that matches nothing
+
+```
+$ python app.py ask 'neon green snowsuit under $5'
+
+[1] parse_query
+      in:  dict with keys: query
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+[3] branch: empty results
+      →    stopping — no listings matched
+
+  No listings matched your search for 'neon green snowsuit'. Try broadening your keywords, or adjusting your size or price ceiling ($5).
+```
+
+**2. Empty wardrobe** -- user with nothing saved
+
+```
+$ python app.py ask 'vintage graphic tee under $30' --empty-wardrobe
+(running with an empty wardrobe)
+
+[1] parse_query
+      in:  dict with keys: query
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+[3] select_item
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+[4] suggest_outfit
+      in:  dict with keys: item, wardrobe_items
+      out: Since you are starting from scratch without a saved wardrobe yet, the best way to style a Y2K baby tee is to i…
+[5] create_fit_card
+      in:  dict with keys: item
+      out: Butterflies, pastels, and a major Y2K model-off-duty moment for just $18 on Depop. Pairing this little baby te…
+
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Since you are starting from scratch without a saved wardrobe yet, the best way to style a Y2K baby tee
+            is to invest in a few foundational staple pieces...
+
+  Fit card: Butterflies, pastels, and a major Y2K model-off-duty moment for just $18 on Depop. Pairing this little
+            baby tee with some baggy low-rise denim is about to be my entire personality this season.
+```
+
+The agent ran to completion with general styling advice instead of wardrobe-specific outfits. No crash.
+
+**3. Model unavailable** -- bad API key
+
+```
+$ python app.py ask 'corduroy pants under $40'
+# (run with one character of GEMINI_API_KEY changed)
+
+  The model couldn't be reached. Check that your GEMINI_API_KEY in .env is
+  correct and that you have network access, then try again.
+```
+
+Handled by the `ModelUnavailable` catch in `agent.py::run_agent`. No stack trace shown to the user.
 
 ---
 
@@ -377,7 +444,9 @@ Source: `results/run_2026-10-09_2353_after.md`, loop: `agent.py::run_agent`
 
 ## What's Still Broken
 
-The "90s track jacket, size M" query used in criterion 4 still returns a bucket hat as the top result. The size M filter removes most actual jackets from the pool, and the keyword scorer matches "90s" in the bucket hat's style tags. This is a search relevance issue: the tool returns valid items (they exist, their price is fine, size matches), but the category is wrong. Fixing it would require a category filter in the query parser, a category-weighted scorer, or a semantic re-ranking step. No current criterion fails because of this -- criterion 4 tests fit card quality, not result relevance -- so it was left unfixed.
+**Scenario mismatch in criterion 4:** Criterion 4 as written tests 5 different items, but the eval scenario ran one item (the bucket hat) five times. That is a stricter test of opener variety on one item, not what the criterion says. The after-run MET result also rests on one item, so it shows the prompt change works on that item, not that distinctness is solved in general. Properly testing criterion 4 would require five scenarios with five different matching queries, each returning a different top item.
+
+**Search relevance:** The "90s track jacket, size M" query used in criterion 4 still returns a bucket hat as the top result. The size M filter removes most actual jackets from the pool, and the keyword scorer matches "90s" in the bucket hat's style tags. This is a search relevance issue: the tool returns valid items (they exist, their price is fine, size matches), but the category is wrong. Fixing it would require a category filter in the query parser, a category-weighted scorer, or a semantic re-ranking step. No current criterion fails because of this -- criterion 4 tests fit card quality, not result relevance -- so it was left unfixed.
 
 
 
