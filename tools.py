@@ -183,7 +183,10 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         + f"\nOutfit idea: {outfit}\n\n"
         "Make it sound like something a real person would post — casual, "
         "specific about the vibe, not a product description. Mention the item "
-        "and its price and platform once."
+        "and its price and platform once. "
+        "Do NOT open with 'Scored this' or any variant of it — start from a "
+        "different angle: the vibe it unlocks, a specific styling moment, what "
+        "makes the piece interesting, or the deal itself."
     )
 
     return generate(prompt)
